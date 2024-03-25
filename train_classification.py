@@ -28,10 +28,10 @@ def parse_args():
     parser = argparse.ArgumentParser('training')
     parser.add_argument('--use_cpu', action='store_true', default=False, help='use cpu mode')
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device')
-    parser.add_argument('--batch_size', type=int, default=24, help='batch size in training')
+    parser.add_argument('--batch_size', type=int, default=5, help='batch size in training')
     parser.add_argument('--model', default='pointnet_cls', help='model name [default: pointnet_cls]')
-    parser.add_argument('--num_category', default=40, type=int, choices=[10, 40],  help='training on ModelNet10/40')
-    parser.add_argument('--epoch', default=200, type=int, help='number of epoch in training')
+    parser.add_argument('--num_category', default=16, type=int, choices=[16, 40],  help='training on ModelNet10/40')
+    parser.add_argument('--epoch', default=20, type=int, help='number of epoch in training')
     parser.add_argument('--learning_rate', default=0.001, type=float, help='learning rate in training')
     parser.add_argument('--num_point', type=int, default=1024, help='Point Number')
     parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer for training')
@@ -77,6 +77,27 @@ def test(model, loader, num_class=40):
 
     return instance_acc, class_acc
 
+def collate_fn(batch):
+    max_points = 1024
+    padded_points = []
+    labels = []
+
+    for points, label in batch:
+        # Calculate padding size
+        num_padding = max_points - points.shape[0]
+        # Pad the point cloud to have max_points
+        if num_padding > 0:
+            padding = np.zeros((num_padding, points.shape[1]))
+            points = np.vstack((points, padding))
+        padded_points.append(points)
+        labels.append(label)
+
+    padded_points = np.stack(padded_points, axis=0)
+    labels = np.stack(labels, axis=0)
+
+    return torch.tensor(padded_points, dtype=torch.float), torch.tensor(labels, dtype=torch.long)
+
+
 
 def main(args):
     def log_string(str):
@@ -120,8 +141,8 @@ def main(args):
 
     train_dataset = ModelNetDataLoader(root=data_path, args=args, split='train', process_data=args.process_data)
     test_dataset = ModelNetDataLoader(root=data_path, args=args, split='test', process_data=args.process_data)
-    trainDataLoader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=10, drop_last=True)
-    testDataLoader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=10)
+    trainDataLoader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=10, drop_last=True, collate_fn=collate_fn)
+    testDataLoader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=10, collate_fn=collate_fn)
 
     '''MODEL LOADING'''
     num_class = args.num_category
